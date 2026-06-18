@@ -99,12 +99,12 @@ docker-compose up -d
 Portas:
 
 - Frontend: http://localhost:5173
-- Backend: http://localhost:8080
+- Backend: http://localhost:8086
 
 Health check:
 
 ```bash
-curl http://localhost:8080/api/health
+curl http://localhost:8086/api/health
 ```
 
 Resposta esperada:
@@ -122,7 +122,7 @@ Exemplo em `.env.example`:
 ```env
 IMPORT_WORKERS=20
 CORS_ORIGIN=*
-VITE_API_BASE_URL=http://localhost:8080
+VITE_API_BASE_URL=http://localhost:8086
 ```
 
 Descrição:
@@ -146,7 +146,7 @@ Como diferencial, o mesmo endpoint também aceita arquivos XLS e XLSX.
 Exemplo:
 
 ```bash
-curl -X POST http://localhost:8080/api/importar \
+curl -X POST http://localhost:8086/api/importar \
   -F "files=@massa-teste/tabela_frete_teste.csv"
 ```
 
@@ -173,7 +173,7 @@ GET /api/importacoes
 Exemplo:
 
 ```bash
-curl http://localhost:8080/api/importacoes
+curl http://localhost:8086/api/importacoes
 ```
 
 Resposta:
@@ -237,7 +237,7 @@ GET /api/importacoes/{id}/erros
 Exemplo:
 
 ```bash
-curl http://localhost:8080/api/importacoes/1781627076051443654/erros
+curl http://localhost:8086/api/importacoes/1781627076051443654/erros
 ```
 
 Resposta:
@@ -258,7 +258,7 @@ Resposta:
 O endpoint também aceita paginação opcional via query string:
 
 ```bash
-curl "http://localhost:8080/api/importacoes/1781627076051443654/erros?page=1&limit=50"
+curl "http://localhost:8086/api/importacoes/1781627076051443654/erros?page=1&limit=50"
 ```
 
 Resposta paginada:
@@ -293,7 +293,7 @@ Retorna as linhas válidas da importação em JSON. No frontend, o botão `Expor
 Exemplo:
 
 ```bash
-curl http://localhost:8080/api/importacoes/1781627076051443654/validas
+curl http://localhost:8086/api/importacoes/1781627076051443654/validas
 ```
 
 Resposta:

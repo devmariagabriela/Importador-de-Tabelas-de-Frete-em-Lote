@@ -13,7 +13,7 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		Port:          getEnv("PORT", "8080"),
+		Port:          getEnv("PORT", "8086"),
 		ImportWorkers: getEnvInt("IMPORT_WORKERS", 20),
 		CORSOrigin:    getEnv("CORS_ORIGIN", "*"),
 	}
