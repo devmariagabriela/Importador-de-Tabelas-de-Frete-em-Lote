@@ -120,7 +120,7 @@ function onFilesChange(event: Event) {
 
 async function upload() {
   if (!files.value.length) {
-    message.value = 'Selecione ao menos um CSV.'
+    message.value = 'Selecione ao menos um arquivo CSV.'
     return
   }
 
@@ -436,7 +436,12 @@ onUnmounted(() => {
 
     <section class="upload-panel">
       <label class="dropzone">
-        <input type="file" accept=".csv,text/csv" multiple @change="onFilesChange" />
+        <input
+          type="file"
+          accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          multiple
+          @change="onFilesChange"
+        />
         <span>{{ files.length ? `${files.length} arquivo(s) selecionado(s)` : 'Selecionar CSV' }}</span>
       </label>
       <button type="button" :disabled="uploading || !files.length" @click="upload">

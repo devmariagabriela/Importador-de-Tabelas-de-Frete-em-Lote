@@ -1,7 +1,7 @@
 FROM golang:1.22-alpine AS build
 
 WORKDIR /app
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
 RUN go build -o /bin/api ./cmd/api

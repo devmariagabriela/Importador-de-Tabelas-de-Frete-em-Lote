@@ -1,11 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +16,9 @@ import (
 	"desafio-importador-frete/internal/dto"
 	"desafio-importador-frete/internal/model"
 	"desafio-importador-frete/internal/repository"
+
+	"github.com/extrame/xls"
+	"github.com/xuri/excelize/v2"
 )
 
 const (
@@ -36,14 +41,14 @@ type ImportadorService struct {
 	validationDelay time.Duration
 }
 
-type csvLine struct {
+type importLine struct {
 	number    int
 	raw       []string
 	duplicate bool
 }
 
 type validationResult struct {
-	line   csvLine
+	line   importLine
 	reason string
 	valid  model.FreightRow
 }
@@ -166,7 +171,7 @@ func (s *ImportadorService) processFiles(importID string, files []*multipart.Fil
 		return
 	}
 
-	lines, err := readCSVFiles(files)
+	lines, err := readImportFiles(files)
 	if err != nil {
 		_ = s.repo.SetStatus(importID, model.StatusFailed)
 		_ = s.repo.AddError(model.LinhaErro{
@@ -188,8 +193,8 @@ func (s *ImportadorService) processFiles(importID string, files []*multipart.Fil
 	_ = s.repo.SetStatus(importID, model.StatusCompleted)
 }
 
-func (s *ImportadorService) runWorkerPool(importID string, lines []csvLine) {
-	jobs := make(chan []csvLine)
+func (s *ImportadorService) runWorkerPool(importID string, lines []importLine) {
+	jobs := make(chan []importLine)
 	results := make(chan validationResult)
 
 	var wg sync.WaitGroup
@@ -241,7 +246,7 @@ func (s *ImportadorService) runWorkerPool(importID string, lines []csvLine) {
 	}
 }
 
-func chunkLines(lines []csvLine, workers int) [][]csvLine {
+func chunkLines(lines []importLine, workers int) [][]importLine {
 	if len(lines) == 0 {
 		return nil
 	}
@@ -250,7 +255,7 @@ func chunkLines(lines []csvLine, workers int) [][]csvLine {
 	}
 
 	chunkSize := (len(lines) + workers - 1) / workers
-	chunks := make([][]csvLine, 0, workers)
+	chunks := make([][]importLine, 0, workers)
 	for start := 0; start < len(lines); start += chunkSize {
 		end := start + chunkSize
 		if end > len(lines) {
@@ -262,23 +267,14 @@ func chunkLines(lines []csvLine, workers int) [][]csvLine {
 	return chunks
 }
 
-func readCSVFiles(files []*multipart.FileHeader) ([]csvLine, error) {
-	var lines []csvLine
+func readImportFiles(files []*multipart.FileHeader) ([]importLine, error) {
+	var lines []importLine
 	nextLine := 2
 
 	for _, fileHeader := range files {
-		file, err := fileHeader.Open()
+		fileLines, err := readImportFile(fileHeader, nextLine)
 		if err != nil {
-			return nil, fmt.Errorf("%w: não foi possível abrir arquivo", ErrInvalidCSV)
-		}
-
-		fileLines, err := readCSV(file, nextLine)
-		closeErr := file.Close()
-		if err != nil {
-			return nil, err
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("%w: não foi possível fechar arquivo", ErrInvalidCSV)
+			return nil, fmt.Errorf("%s: %w", fileHeader.Filename, err)
 		}
 
 		lines = append(lines, fileLines...)
@@ -288,7 +284,30 @@ func readCSVFiles(files []*multipart.FileHeader) ([]csvLine, error) {
 	return lines, nil
 }
 
-func readCSV(reader io.Reader, firstDataLine int) ([]csvLine, error) {
+func readImportFile(fileHeader *multipart.FileHeader, firstDataLine int) ([]importLine, error) {
+	file, err := fileHeader.Open()
+	if err != nil {
+		return nil, fmt.Errorf("%w: não foi possível abrir arquivo", ErrInvalidCSV)
+	}
+	defer file.Close()
+
+	switch strings.ToLower(filepath.Ext(fileHeader.Filename)) {
+	case ".csv":
+		return readCSV(file, firstDataLine)
+	case ".xlsx":
+		return readXLSX(file, firstDataLine)
+	case ".xls":
+		content, err := io.ReadAll(file)
+		if err != nil {
+			return nil, fmt.Errorf("%w: não foi possível ler arquivo xls", ErrInvalidCSV)
+		}
+		return readXLS(bytes.NewReader(content), firstDataLine)
+	default:
+		return nil, fmt.Errorf("%w: formato suportado: .csv, .xls ou .xlsx", ErrInvalidUpload)
+	}
+}
+
+func readCSV(reader io.Reader, firstDataLine int) ([]importLine, error) {
 	csvReader := csv.NewReader(reader)
 	csvReader.FieldsPerRecord = -1
 	csvReader.TrimLeadingSpace = true
@@ -304,7 +323,7 @@ func readCSV(reader io.Reader, firstDataLine int) ([]csvLine, error) {
 		return nil, fmt.Errorf("%w: cabeçalho esperado origem,destino,peso_min,peso_max,valor", ErrInvalidCSV)
 	}
 
-	var lines []csvLine
+	var lines []importLine
 	lineNumber := firstDataLine
 	for {
 		row, err := csvReader.Read()
@@ -312,14 +331,87 @@ func readCSV(reader io.Reader, firstDataLine int) ([]csvLine, error) {
 			break
 		}
 		if err != nil {
-			lines = append(lines, csvLine{
+			lines = append(lines, importLine{
 				number: lineNumber,
 				raw:    []string{},
 			})
 			lineNumber++
 			continue
 		}
-		lines = append(lines, csvLine{
+		lines = append(lines, importLine{
+			number: lineNumber,
+			raw:    normalizeRecordLength(row),
+		})
+		lineNumber++
+	}
+
+	return lines, nil
+}
+
+func readXLSX(reader io.Reader, firstDataLine int) ([]importLine, error) {
+	workbook, err := excelize.OpenReader(reader)
+	if err != nil {
+		return nil, fmt.Errorf("%w: falha ao ler arquivo xlsx", ErrInvalidCSV)
+	}
+	defer workbook.Close()
+
+	sheets := workbook.GetSheetList()
+	if len(sheets) == 0 {
+		return nil, fmt.Errorf("%w: planilha sem abas", ErrInvalidCSV)
+	}
+
+	rows, err := workbook.GetRows(sheets[0])
+	if err != nil {
+		return nil, fmt.Errorf("%w: falha ao ler linhas do xlsx", ErrInvalidCSV)
+	}
+
+	return readSpreadsheetRows(rows, firstDataLine)
+}
+
+func readXLS(reader io.ReadSeeker, firstDataLine int) ([]importLine, error) {
+	workbook, err := xls.OpenReader(reader, "utf-8")
+	if err != nil {
+		return nil, fmt.Errorf("%w: falha ao ler arquivo xls", ErrInvalidCSV)
+	}
+	if workbook.NumSheets() == 0 {
+		return nil, fmt.Errorf("%w: planilha sem abas", ErrInvalidCSV)
+	}
+
+	sheet := workbook.GetSheet(0)
+	if sheet == nil {
+		return nil, fmt.Errorf("%w: primeira aba não encontrada", ErrInvalidCSV)
+	}
+
+	rows := make([][]string, 0, int(sheet.MaxRow)+1)
+	for rowIndex := 0; rowIndex <= int(sheet.MaxRow); rowIndex++ {
+		row := sheet.Row(rowIndex)
+		if row == nil {
+			rows = append(rows, nil)
+			continue
+		}
+
+		values := make([]string, 0, row.LastCol())
+		for colIndex := row.FirstCol(); colIndex < row.LastCol(); colIndex++ {
+			values = append(values, row.Col(colIndex))
+		}
+		rows = append(rows, values)
+	}
+
+	return readSpreadsheetRows(rows, firstDataLine)
+}
+
+func readSpreadsheetRows(rows [][]string, firstDataLine int) ([]importLine, error) {
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("%w: arquivo vazio", ErrInvalidCSV)
+	}
+	if !validHeader(normalizeRecordLength(rows[0])) {
+		return nil, fmt.Errorf("%w: cabeçalho esperado origem,destino,peso_min,peso_max,valor", ErrInvalidCSV)
+	}
+
+	lines := make([]importLine, 0, len(rows)-1)
+	lineNumber := firstDataLine
+	for _, row := range rows[1:] {
+		lines = append(lines, importLine{
 			number: lineNumber,
 			raw:    normalizeRecordLength(row),
 		})
@@ -350,7 +442,7 @@ func normalizeRecordLength(row []string) []string {
 	return out
 }
 
-func markDuplicates(lines []csvLine) {
+func markDuplicates(lines []importLine) {
 	seen := make(map[string]struct{}, len(lines))
 	for i := range lines {
 		key, ok := duplicateKey(lines[i].raw)
@@ -393,7 +485,7 @@ func duplicateKey(row []string) (string, bool) {
 	}, "|"), true
 }
 
-func validateLine(line csvLine, delay time.Duration) (model.FreightRow, string) {
+func validateLine(line importLine, delay time.Duration) (model.FreightRow, string) {
 	if delay > 0 {
 		time.Sleep(10 * time.Millisecond)
 	}

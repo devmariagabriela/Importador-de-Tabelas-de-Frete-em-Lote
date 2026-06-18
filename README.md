@@ -16,6 +16,7 @@ O backend processa as linhas em background usando goroutines e um worker pool co
 ## Requisitos Atendidos
 
 - Upload de um ou mais arquivos CSV
+- Suporte adicional a XLS e XLSX como diferencial
 - Processamento concorrente com goroutines
 - Worker pool configurável por variável de ambiente
 - Validação com `time.Sleep(10 * time.Millisecond)` por linha
@@ -74,7 +75,7 @@ Responsabilidades:
 - `internal/config`: leitura de variáveis de ambiente.
 - `internal/handler`: rotas HTTP, multipart upload e respostas JSON.
 - `internal/dto`: contratos de resposta da API.
-- `internal/service`: regras de negócio, leitura do CSV, validações e worker pool.
+- `internal/service`: regras de negócio, leitura de CSV, leitura adicional de Excel, validações e worker pool.
 - `internal/repository`: armazenamento em memória com `sync.RWMutex`.
 - `internal/model`: entidades de domínio e status da importação.
 - `internal/middleware`: CORS, log e recover.
@@ -139,6 +140,8 @@ POST /api/importar
 ```
 
 Recebe um ou mais arquivos CSV via `multipart/form-data`.
+
+Como diferencial, o mesmo endpoint também aceita arquivos XLS e XLSX.
 
 Exemplo:
 
@@ -314,7 +317,23 @@ Status HTTP:
 - `200 OK`: recurso encontrado.
 - `404 Not Found`: importação inexistente.
 
+## Formatos de Arquivo
+
+O formato CSV é o formato principal da aplicação e atende integralmente aos requisitos propostos no desafio.
+
+Como funcionalidade adicional, também foi implementado suporte para arquivos XLS e XLSX, permitindo maior flexibilidade no processo de importação.
+
+Todos os formatos são convertidos internamente para uma estrutura única de processamento, utilizando o mesmo pipeline de validação concorrente baseado em goroutines.
+
+### Formatos suportados
+
+- CSV: formato principal e recomendado
+- XLS: diferencial
+- XLSX: diferencial
+
 ## Formato Esperado do CSV
+
+O CSV é o formato principal esperado pelo desafio:
 
 ```csv
 origem,destino,peso_min,peso_max,valor
@@ -329,6 +348,8 @@ Campos:
 - `peso_min`: peso mínimo da faixa.
 - `peso_max`: peso máximo da faixa.
 - `valor`: valor do frete.
+
+Para XLS e XLSX, o layout deve ser o mesmo. A primeira aba é lida e a primeira linha deve conter o cabeçalho.
 
 ## Regras de Validação
 
@@ -353,6 +374,7 @@ POST /api/importar
   -> cria importação em memória
   -> inicia goroutine de processamento
   -> lê CSV
+  -> se o arquivo for XLS/XLSX, converte a primeira aba para o mesmo modelo de linhas
   -> marca duplicidades
   -> divide linhas em chunks
   -> envia chunks para worker pool
@@ -387,7 +409,7 @@ cd massa-teste
 python3 gerar-massa-teste.py
 ```
 
-Depois faça upload do CSV pelo frontend e acompanhe a coluna `Duração` na tabela de importações.
+Depois faça upload do arquivo pelo frontend e acompanhe a coluna `Duração` na tabela de importações.
 
 ## Armazenamento em Memória
 
@@ -446,7 +468,8 @@ docker run --rm -v "$PWD":/app -w /app golang:1.22-alpine go test ./...
 ## Decisões Técnicas
 
 - Foi usada a biblioteca padrão `net/http` para manter a API simples e idiomática.
-- O CSV é dividido em chunks, e o worker pool valida esses chunks em goroutines paralelas.
+- O fluxo principal lê CSV e divide as linhas em chunks para validação paralela.
+- XLS e XLSX são diferenciais: a primeira aba é convertida para o mesmo modelo interno usado pelo CSV.
 - O worker pool evita criar uma goroutine por linha e permite controlar concorrência por `IMPORT_WORKERS`.
 - O repository em memória usa `sync.RWMutex` para proteger leituras e escritas concorrentes.
 - A deduplicação é feita antes do processamento paralelo para manter comportamento determinístico.
@@ -459,7 +482,7 @@ docker run --rm -v "$PWD":/app -w /app golang:1.22-alpine go test ./...
 ## Limitações Conhecidas
 
 - Os dados não persistem após restart do backend.
-- O CSV deve estar em UTF-8.
+- Arquivos CSV devem estar em UTF-8.
 
 ## Melhorias Futuras
 
