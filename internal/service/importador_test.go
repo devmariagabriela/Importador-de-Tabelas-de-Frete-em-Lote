@@ -20,42 +20,42 @@ func TestValidateLine(t *testing.T) {
 		{
 			name: "origem obrigatória",
 			line: csvLine{raw: []string{"", "RIO DE JANEIRO", "0", "10", "45.90"}},
-			want: "origem e obrigatória",
+			want: "Origem é obrigatória",
 		},
 		{
 			name: "peso min obrigatório",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "", "10", "45.90"}},
-			want: "peso_min e obrigatório",
+			want: "Peso Mínimo é obrigatório",
 		},
 		{
 			name: "peso max obrigatório",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "0", "", "45.90"}},
-			want: "peso_max e obrigatório",
+			want: "Peso Máximo é obrigatório",
 		},
 		{
 			name: "valor obrigatório",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "0", "10", ""}},
-			want: "valor e obrigatório",
+			want: "Valor é obrigatório",
 		},
 		{
 			name: "peso max menor que min",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "10", "5", "45.90"}},
-			want: "peso_max deve ser maior que peso_min",
+			want: "Peso Máximo deve ser maior que Peso Mínimo",
 		},
 		{
 			name: "valor inválido",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "0", "10", "0"}},
-			want: "valor deve ser maior que zero",
+			want: "Valor deve ser maior que zero",
 		},
 		{
 			name: "peso negativo",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "-1", "10", "45.90"}},
-			want: "peso não pode ser negativo",
+			want: "Peso não pode ser negativo",
 		},
 		{
 			name: "duplicada",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "0", "10", "45.90"}, duplicate: true},
-			want: "linha duplicada para mesma origem, destino e faixa de peso",
+			want: "Linha duplicada para mesma origem, destino e faixa de peso",
 		},
 	}
 
@@ -64,6 +64,28 @@ func TestValidateLine(t *testing.T) {
 			_, got := validateLine(tt.line, 0)
 			if got != tt.want {
 				t.Fatalf("validateLine() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestErrorField(t *testing.T) {
+	tests := []struct {
+		reason string
+		want   string
+	}{
+		{reason: "Origem é obrigatória", want: "origem"},
+		{reason: "Destino é obrigatório", want: "destino"},
+		{reason: "Peso Máximo deve ser maior que Peso Mínimo", want: "peso_max"},
+		{reason: "Peso não pode ser negativo", want: "peso"},
+		{reason: "Valor deve ser maior que zero", want: "valor"},
+		{reason: "Linha duplicada para mesma origem, destino e faixa de peso", want: "linha"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.reason, func(t *testing.T) {
+			if got := errorField(tt.reason); got != tt.want {
+				t.Fatalf("errorField() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -100,6 +122,21 @@ func TestMarkDuplicates(t *testing.T) {
 	}
 	if lines[3].duplicate {
 		t.Fatal("faixa diferente não deve ser marcada como duplicada")
+	}
+}
+
+func TestChunkLines(t *testing.T) {
+	lines := []csvLine{{number: 1}, {number: 2}, {number: 3}, {number: 4}, {number: 5}}
+
+	chunks := chunkLines(lines, 2)
+	if len(chunks) != 2 {
+		t.Fatalf("chunkLines() returned %d chunks, want 2", len(chunks))
+	}
+	if len(chunks[0]) != 3 || len(chunks[1]) != 2 {
+		t.Fatalf("chunkLines() sizes = %d, %d; want 3, 2", len(chunks[0]), len(chunks[1]))
+	}
+	if chunks[0][0].number != 1 || chunks[1][1].number != 5 {
+		t.Fatalf("chunkLines() did not preserve line order: %+v", chunks)
 	}
 }
 

@@ -57,8 +57,15 @@ func (r *MemoryImportRepository) SetStatus(id string, status model.ImportStatus)
 	if !ok {
 		return ErrNotFound
 	}
+	now := time.Now()
 	importacao.Status = status
-	importacao.UpdatedAt = time.Now()
+	importacao.UpdatedAt = now
+	if status == model.StatusProcessing && importacao.StartedAt.IsZero() {
+		importacao.StartedAt = now
+	}
+	if status == model.StatusCompleted || status == model.StatusFailed {
+		importacao.FinishedAt = now
+	}
 	r.imports[id] = importacao
 	return nil
 }

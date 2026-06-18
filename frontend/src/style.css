@@ -50,7 +50,7 @@ button:disabled {
 }
 
 .shell {
-  width: min(1280px, calc(100% - 32px));
+  width: min(1760px, calc(100% - 32px));
   margin: 0 auto;
   padding: 28px 0 40px;
 }
@@ -160,12 +160,16 @@ h2 {
 
 .content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1.35fr);
   gap: 16px;
 }
 
 .panel {
+  display: flex;
+  min-height: 640px;
   min-width: 0;
+  max-height: 760px;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -206,19 +210,21 @@ h2 {
 }
 
 .table-wrap {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
 }
 
 th,
 td {
   border-bottom: 1px solid #edf2f0;
-  padding: 12px 14px;
+  padding: 13px 16px;
   text-align: left;
   vertical-align: middle;
   white-space: nowrap;
@@ -243,6 +249,17 @@ tbody tr.selected {
 .mono {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.82rem;
+}
+
+.invalid-cell {
+  color: #9c2f2f;
+  background: #fff0ef;
+  font-weight: 800;
+}
+
+.content-grid .panel:last-child td:last-child {
+  min-width: 260px;
+  white-space: normal;
 }
 
 .badge {
@@ -317,7 +334,7 @@ small {
 
 @media (max-width: 900px) {
   .shell {
-    width: min(100% - 20px, 1280px);
+    width: min(100% - 20px, 1760px);
     padding-top: 18px;
   }
 
@@ -330,6 +347,11 @@ small {
   .summary-grid,
   .content-grid {
     grid-template-columns: 1fr;
+  }
+
+  .panel {
+    min-height: 520px;
+    max-height: none;
   }
 
   .progress {

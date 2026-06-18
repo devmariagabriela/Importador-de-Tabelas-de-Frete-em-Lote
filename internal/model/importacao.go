@@ -35,6 +35,8 @@ type Importacao struct {
 	Invalidas         int
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	StartedAt         time.Time
+	FinishedAt        time.Time
 }
 
 func (i Importacao) Progresso() float64 {
@@ -47,11 +49,25 @@ func (i Importacao) Progresso() float64 {
 	return float64(i.LinhasProcessadas) * 100 / float64(i.TotalLinhas)
 }
 
+func (i Importacao) DuracaoMS() int64 {
+	if i.StartedAt.IsZero() {
+		return 0
+	}
+
+	end := i.FinishedAt
+	if end.IsZero() {
+		end = time.Now()
+	}
+
+	return end.Sub(i.StartedAt).Milliseconds()
+}
+
 type LinhaErro struct {
 	ImportID       string
 	NumeroLinha    int
 	DadosOriginais []string
 	Motivo         string
+	Campo          string
 	CreatedAt      time.Time
 }
 

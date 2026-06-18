@@ -14,6 +14,7 @@ type ImportacaoResponse struct {
 	Validas           int       `json:"validas"`
 	Invalidas         int       `json:"invalidas"`
 	Progresso         float64   `json:"progresso"`
+	DuracaoMS         int64     `json:"duracao_ms"`
 	CriadaEm          time.Time `json:"criada_em"`
 	AtualizadaEm      time.Time `json:"atualizada_em"`
 }
@@ -26,6 +27,7 @@ type LinhaErroResponse struct {
 	NumeroLinha    int      `json:"numero_linha"`
 	DadosOriginais []string `json:"dados_originais"`
 	Motivo         string   `json:"motivo"`
+	Campo          string   `json:"campo,omitempty"`
 }
 
 type ErrosResponse struct {

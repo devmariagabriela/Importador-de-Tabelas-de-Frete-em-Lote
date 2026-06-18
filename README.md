@@ -2,7 +2,7 @@
 
 Aplicação web fullstack para upload e validação em lote de tabelas de frete em CSV.
 
-O backend processa as linhas em background usando goroutines e um worker pool configurável. O frontend permite enviar um ou mais arquivos, acompanha o progresso da importação por polling e exibe os erros encontrados por linha.
+O backend processa as linhas em background usando goroutines e um worker pool configurável. O frontend permite enviar um ou mais arquivos, acompanha o progresso da importação por WebSocket e exibe os erros encontrados por linha.
 
 ## Stack
 
@@ -20,11 +20,14 @@ O backend processa as linhas em background usando goroutines e um worker pool co
 - Worker pool configurável por variável de ambiente
 - Validação com `time.Sleep(10 * time.Millisecond)` por linha
 - Listagem de importações com status, contadores e percentual de progresso
+- Exibição da duração de processamento por importação
+- Atualização de progresso em tempo real com WebSocket
 - Listagem de linhas inválidas com número da linha, dados originais e motivo
+- Highlight visual da célula inválida no frontend
 - Paginação opcional das linhas inválidas
 - Exportação das linhas válidas em JSON
 - Armazenamento em memória protegido por mutex
-- Frontend com upload, barra de progresso, resumo, tabela de erros paginada e botão de exportação
+- Frontend com upload, barra de progresso, resumo, tabela de válidas, tabela de erros paginada e botão de exportação
 - Docker Compose com serviços de backend e frontend
 - Massa de teste com erros propositais
 - Testes unitários para regras de validação
@@ -183,8 +186,38 @@ Resposta:
       "validas": 1735,
       "invalidas": 3365,
       "progresso": 100,
+      "duracao_ms": 2840,
       "criada_em": "2026-06-16T16:24:36.051447856Z",
       "atualizada_em": "2026-06-16T16:24:38.721426525Z"
+    }
+  ]
+}
+```
+
+### WebSocket de Importações
+
+```http
+GET /api/importacoes/ws
+```
+
+Abre uma conexão WebSocket que envia uma mensagem JSON a cada segundo com o mesmo payload de `GET /api/importacoes`.
+
+Exemplo de mensagem:
+
+```json
+{
+  "data": [
+    {
+      "id": "1781627076051443654",
+      "status": "PROCESSANDO",
+      "total_linhas": 5100,
+      "linhas_processadas": 1200,
+      "validas": 900,
+      "invalidas": 300,
+      "progresso": 23.52,
+      "duracao_ms": 640,
+      "criada_em": "2026-06-16T16:24:36.051447856Z",
+      "atualizada_em": "2026-06-16T16:24:36.691447856Z"
     }
   ]
 }
@@ -210,7 +243,8 @@ Resposta:
     {
       "numero_linha": 3,
       "dados_originais": ["BELO HORIZONTE", "", "30", "50", "185.91"],
-      "motivo": "destino e obrigatório"
+      "motivo": "Destino é obrigatório",
+      "campo": "destino"
     }
   ]
 }
@@ -230,7 +264,8 @@ Resposta paginada:
     {
       "numero_linha": 3,
       "dados_originais": ["BELO HORIZONTE", "", "30", "50", "185.91"],
-      "motivo": "destino e obrigatório"
+      "motivo": "Destino é obrigatório",
+      "campo": "destino"
     }
   ],
   "page": 1,
@@ -248,7 +283,7 @@ Sem `page` e `limit`, o endpoint mantém compatibilidade e retorna todos os erro
 GET /api/importacoes/{id}/validas
 ```
 
-Retorna as linhas válidas da importação em JSON. No frontend, o botão `Exportar válidas` baixa esse conteúdo como arquivo `.json`.
+Retorna as linhas válidas da importação em JSON. No frontend, o botão `Exportar` na tabela de linhas válidas baixa esse conteúdo como arquivo `.json`.
 
 Exemplo:
 
@@ -297,8 +332,8 @@ Campos:
 
 ## Regras de Validação
 
-- `origem` e obrigatória.
-- `destino` e obrigatório.
+- `origem` é obrigatória.
+- `destino` é obrigatório.
 - `peso_min` deve ser numérico.
 - `peso_max` deve ser numérico.
 - `valor` deve ser numérico.
@@ -319,7 +354,8 @@ POST /api/importar
   -> inicia goroutine de processamento
   -> lê CSV
   -> marca duplicidades
-  -> envia linhas para worker pool
+  -> divide linhas em chunks
+  -> envia chunks para worker pool
   -> atualiza contadores e erros no repository
 ```
 
@@ -331,7 +367,27 @@ time.Sleep(10 * time.Millisecond)
 
 Esse atraso simula uma chamada externa, como validação de localidade.
 
-Com `IMPORT_WORKERS=20`, a massa de teste foi processada em aproximadamente 3 segundos no ambiente local usado durante o desenvolvimento.
+Com `IMPORT_WORKERS=20`, a massa de teste de aproximadamente 5000 linhas deve concluir abaixo do limite de 10 segundos exigido no desafio.
+
+Resultado medido localmente via Docker Compose:
+
+```text
+Arquivo: massa-teste/tabela_frete_teste.csv
+Linhas: 5100
+Workers: 20
+Tempo medido entre upload e conclusão: 3,04s
+Duração registrada pela API: 2616ms
+```
+
+Para medir no seu ambiente:
+
+```bash
+docker compose up -d --build
+cd massa-teste
+python3 gerar-massa-teste.py
+```
+
+Depois faça upload do CSV pelo frontend e acompanhe a coluna `Duração` na tabela de importações.
 
 ## Armazenamento em Memória
 
@@ -390,23 +446,22 @@ docker run --rm -v "$PWD":/app -w /app golang:1.22-alpine go test ./...
 ## Decisões Técnicas
 
 - Foi usada a biblioteca padrão `net/http` para manter a API simples e idiomática.
+- O CSV é dividido em chunks, e o worker pool valida esses chunks em goroutines paralelas.
 - O worker pool evita criar uma goroutine por linha e permite controlar concorrência por `IMPORT_WORKERS`.
 - O repository em memória usa `sync.RWMutex` para proteger leituras e escritas concorrentes.
 - A deduplicação é feita antes do processamento paralelo para manter comportamento determinístico.
-- O frontend usa polling a cada 1 segundo para acompanhar progresso sem complexidade extra.
+- O frontend usa WebSocket para acompanhar progresso com atualização contínua sem abrir uma nova requisição a cada ciclo.
 - A paginação dos erros foi adicionada de forma compatível: sem query string, o endpoint continua retornando todos os erros.
 - As linhas válidas são armazenadas em memória para permitir exportação JSON sem reprocessar o CSV.
+- O backend retorna o campo inválido em cada erro para permitir highlight visual no frontend.
+- A duração da importação é calculada em memória entre os status `PROCESSANDO` e `CONCLUIDA`/`FALHOU`.
 
 ## Limitações Conhecidas
 
 - Os dados não persistem após restart do backend.
-- O frontend usa polling, não WebSocket ou SSE.
 - O CSV deve estar em UTF-8.
-- O highlight visual por célula inválida não foi implementado, pois exigiria retornar metadados de campo inválido por linha.
 
 ## Melhorias Futuras
 
-- Adicionar SSE para progresso em tempo real.
 - Adicionar endpoint de cancelamento de importação.
-- Highlight visual por célula inválida no frontend.
 - Adicionar benchmark automatizado para a massa de 5000 linhas.

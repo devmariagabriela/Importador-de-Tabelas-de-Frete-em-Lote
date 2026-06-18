@@ -16,7 +16,10 @@ import (
 	"desafio-importador-frete/internal/repository"
 )
 
-const expectedColumns = 5
+const (
+	expectedColumns                 = 5
+	requiredExternalValidationDelay = 10 * time.Millisecond
+)
 
 var expectedHeader = []string{"origem", "destino", "peso_min", "peso_max", "valor"}
 
@@ -46,7 +49,7 @@ type validationResult struct {
 }
 
 func NewImportadorService(repo repository.ImportRepository, workers int) *ImportadorService {
-	return NewImportadorServiceWithDelay(repo, workers, 10*time.Millisecond)
+	return NewImportadorServiceWithDelay(repo, workers, requiredExternalValidationDelay)
 }
 
 func NewImportadorServiceWithDelay(repo repository.ImportRepository, workers int, delay time.Duration) *ImportadorService {
@@ -95,6 +98,7 @@ func (s *ImportadorService) ListImports() (dto.ImportacoesResponse, error) {
 			Validas:           item.Validas,
 			Invalidas:         item.Invalidas,
 			Progresso:         item.Progresso(),
+			DuracaoMS:         item.DuracaoMS(),
 			CriadaEm:          item.CreatedAt,
 			AtualizadaEm:      item.UpdatedAt,
 		})
@@ -118,6 +122,7 @@ func (s *ImportadorService) GetErrors(id string, page int, limit int) (dto.Erros
 			NumeroLinha:    item.NumeroLinha,
 			DadosOriginais: item.DadosOriginais,
 			Motivo:         item.Motivo,
+			Campo:          item.Campo,
 		})
 	}
 
@@ -169,6 +174,7 @@ func (s *ImportadorService) processFiles(importID string, files []*multipart.Fil
 			NumeroLinha:    0,
 			DadosOriginais: nil,
 			Motivo:         err.Error(),
+			Campo:          "linha",
 		})
 		return
 	}
@@ -183,7 +189,7 @@ func (s *ImportadorService) processFiles(importID string, files []*multipart.Fil
 }
 
 func (s *ImportadorService) runWorkerPool(importID string, lines []csvLine) {
-	jobs := make(chan csvLine)
+	jobs := make(chan []csvLine)
 	results := make(chan validationResult)
 
 	var wg sync.WaitGroup
@@ -191,20 +197,22 @@ func (s *ImportadorService) runWorkerPool(importID string, lines []csvLine) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for line := range jobs {
-				valid, reason := validateLine(line, s.validationDelay)
-				results <- validationResult{
-					line:   line,
-					reason: reason,
-					valid:  valid,
+			for chunk := range jobs {
+				for _, line := range chunk {
+					valid, reason := validateLine(line, s.validationDelay)
+					results <- validationResult{
+						line:   line,
+						reason: reason,
+						valid:  valid,
+					}
 				}
 			}
 		}()
 	}
 
 	go func() {
-		for _, line := range lines {
-			jobs <- line
+		for _, chunk := range chunkLines(lines, s.workers) {
+			jobs <- chunk
 		}
 		close(jobs)
 		wg.Wait()
@@ -227,9 +235,31 @@ func (s *ImportadorService) runWorkerPool(importID string, lines []csvLine) {
 			NumeroLinha:    result.line.number,
 			DadosOriginais: append([]string(nil), result.line.raw...),
 			Motivo:         result.reason,
+			Campo:          errorField(result.reason),
 		})
 		_ = s.repo.IncrementCounters(importID, 0, 1)
 	}
+}
+
+func chunkLines(lines []csvLine, workers int) [][]csvLine {
+	if len(lines) == 0 {
+		return nil
+	}
+	if workers <= 0 {
+		workers = 1
+	}
+
+	chunkSize := (len(lines) + workers - 1) / workers
+	chunks := make([][]csvLine, 0, workers)
+	for start := 0; start < len(lines); start += chunkSize {
+		end := start + chunkSize
+		if end > len(lines) {
+			end = len(lines)
+		}
+		chunks = append(chunks, lines[start:end])
+	}
+
+	return chunks
 }
 
 func readCSVFiles(files []*multipart.FileHeader) ([]csvLine, error) {
@@ -365,14 +395,14 @@ func duplicateKey(row []string) (string, bool) {
 
 func validateLine(line csvLine, delay time.Duration) (model.FreightRow, string) {
 	if delay > 0 {
-		time.Sleep(delay)
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	if line.duplicate {
-		return model.FreightRow{}, "linha duplicada para mesma origem, destino e faixa de peso"
+		return model.FreightRow{}, "Linha duplicada para mesma origem, destino e faixa de peso"
 	}
 	if len(line.raw) != expectedColumns {
-		return model.FreightRow{}, "linha deve conter exatamente 5 colunas"
+		return model.FreightRow{}, "Linha deve conter exatamente 5 colunas"
 	}
 
 	origem := strings.TrimSpace(line.raw[0])
@@ -382,42 +412,42 @@ func validateLine(line csvLine, delay time.Duration) (model.FreightRow, string) 
 	valorRaw := strings.TrimSpace(line.raw[4])
 
 	if origem == "" {
-		return model.FreightRow{}, "origem e obrigatória"
+		return model.FreightRow{}, "Origem é obrigatória"
 	}
 	if destino == "" {
-		return model.FreightRow{}, "destino e obrigatório"
+		return model.FreightRow{}, "Destino é obrigatório"
 	}
 	if pesoMinRaw == "" {
-		return model.FreightRow{}, "peso_min e obrigatório"
+		return model.FreightRow{}, "Peso Mínimo é obrigatório"
 	}
 	if pesoMaxRaw == "" {
-		return model.FreightRow{}, "peso_max e obrigatório"
+		return model.FreightRow{}, "Peso Máximo é obrigatório"
 	}
 	if valorRaw == "" {
-		return model.FreightRow{}, "valor e obrigatório"
+		return model.FreightRow{}, "Valor é obrigatório"
 	}
 
 	pesoMin, err := parseDecimal(pesoMinRaw)
 	if err != nil {
-		return model.FreightRow{}, "peso_min deve ser numérico"
+		return model.FreightRow{}, "Peso Mínimo deve ser numérico"
 	}
 	pesoMax, err := parseDecimal(pesoMaxRaw)
 	if err != nil {
-		return model.FreightRow{}, "peso_max deve ser numérico"
+		return model.FreightRow{}, "Peso Máximo deve ser numérico"
 	}
 	valor, err := parseDecimal(valorRaw)
 	if err != nil {
-		return model.FreightRow{}, "valor deve ser numérico"
+		return model.FreightRow{}, "Valor deve ser numérico"
 	}
 
 	if pesoMin < 0 || pesoMax < 0 {
-		return model.FreightRow{}, "peso não pode ser negativo"
+		return model.FreightRow{}, "Peso não pode ser negativo"
 	}
 	if pesoMax <= pesoMin {
-		return model.FreightRow{}, "peso_max deve ser maior que peso_min"
+		return model.FreightRow{}, "Peso Máximo deve ser maior que Peso Mínimo"
 	}
 	if valor <= 0 {
-		return model.FreightRow{}, "valor deve ser maior que zero"
+		return model.FreightRow{}, "Valor deve ser maior que zero"
 	}
 
 	return model.FreightRow{
@@ -427,6 +457,25 @@ func validateLine(line csvLine, delay time.Duration) (model.FreightRow, string) 
 		PesoMax: pesoMax,
 		Valor:   valor,
 	}, ""
+}
+
+func errorField(reason string) string {
+	switch reason {
+	case "Origem é obrigatória":
+		return "origem"
+	case "Destino é obrigatório":
+		return "destino"
+	case "Peso Mínimo é obrigatório", "Peso Mínimo deve ser numérico":
+		return "peso_min"
+	case "Peso Máximo é obrigatório", "Peso Máximo deve ser numérico", "Peso Máximo deve ser maior que Peso Mínimo":
+		return "peso_max"
+	case "Peso não pode ser negativo":
+		return "peso"
+	case "Valor é obrigatório", "Valor deve ser numérico", "Valor deve ser maior que zero":
+		return "valor"
+	default:
+		return "linha"
+	}
 }
 
 func parseDecimal(value string) (float64, error) {

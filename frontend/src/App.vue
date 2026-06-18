@@ -1,11 +1,80 @@
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+
+type ImportStatus = 'CONCLUIDA' | 'PROCESSANDO' | 'PENDENTE' | 'FALHOU' | string
+type FreightField = 'origem' | 'destino' | 'peso_min' | 'peso_max' | 'valor'
+
+interface Importacao {
+  id: string
+  status: ImportStatus
+  total_linhas: number
+  linhas_processadas: number
+  validas: number
+  invalidas: number
+  progresso: number
+  duracao_ms: number
+}
+
+interface LinhaErro {
+  numero_linha: number
+  dados_originais: string[]
+  motivo: string
+  campo?: FreightField | 'peso' | 'linha' | string
+}
+
+interface LinhaValida {
+  numero_linha: number
+  origem: string
+  destino: string
+  peso_min: number
+  peso_max: number
+  valor: number
+}
+
+interface ImportacoesResponse {
+  data?: Importacao[]
+}
+
+interface ErrosResponse {
+  data?: LinhaErro[]
+  page?: number
+  limit?: number
+  total?: number
+  total_pages?: number
+}
+
+interface LinhasValidasResponse {
+  data?: LinhaValida[]
+}
+
+interface ImportCreatedResponse {
+  id?: string
+  error?: string
+}
+
+interface ErrorPagination {
+  page: number
+  limit: number
+  total: number
+  total_pages: number
+}
+
+interface Totals {
+  total: number
+  validas: number
+  invalidas: number
+}
+
+interface ApplyImportsOptions {
+  refreshDetails?: boolean
+}
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
 
-const files = ref([])
-const imports = ref([])
-const errors = ref([])
+const files = ref<File[]>([])
+const imports = ref<Importacao[]>([])
+const errors = ref<LinhaErro[]>([])
+const validRows = ref<LinhaValida[]>([])
 const selectedImportId = ref('')
 const loading = ref(false)
 const refreshing = ref(false)
@@ -13,18 +82,27 @@ const uploading = ref(false)
 const message = ref('')
 const errorsPage = ref(1)
 const errorsLimit = 50
-const errorPagination = ref({
+const validRowsPage = ref(1)
+const validRowsLimit = 50
+const errorPagination = ref<ErrorPagination>({
   page: 1,
   limit: errorsLimit,
   total: 0,
   total_pages: 0,
 })
-let timer = 0
+const freightFields: FreightField[] = ['origem', 'destino', 'peso_min', 'peso_max', 'valor']
+let importSocket: WebSocket | null = null
+let refreshingDetails = false
 
 const selectedImport = computed(() => imports.value.find((item) => item.id === selectedImportId.value))
+const validRowsTotalPages = computed(() => Math.ceil(validRows.value.length / validRowsLimit))
+const paginatedValidRows = computed(() => {
+  const start = (validRowsPage.value - 1) * validRowsLimit
+  return validRows.value.slice(start, start + validRowsLimit)
+})
 const totals = computed(() => {
   return imports.value.reduce(
-    (acc, item) => {
+    (acc: Totals, item) => {
       acc.total += item.total_linhas
       acc.validas += item.validas
       acc.invalidas += item.invalidas
@@ -34,8 +112,9 @@ const totals = computed(() => {
   )
 })
 
-function onFilesChange(event) {
-  files.value = Array.from(event.target.files || [])
+function onFilesChange(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  files.value = Array.from(input?.files || [])
   message.value = ''
 }
 
@@ -55,15 +134,15 @@ async function upload() {
       method: 'POST',
       body: form,
     })
-    const payload = await response.json()
+    const payload = (await response.json()) as ImportCreatedResponse
     if (!response.ok) {
       throw new Error(payload.error || 'Falha no upload.')
     }
-    selectedImportId.value = payload.id
+    selectedImportId.value = payload.id || ''
     files.value = []
     await refreshImports()
   } catch (error) {
-    message.value = error.message
+    message.value = errorMessage(error)
   } finally {
     uploading.value = false
   }
@@ -80,21 +159,8 @@ async function refreshImports() {
       throw new Error('Falha ao carregar importações.')
     }
 
-    const payload = await response.json()
-    imports.value = payload.data || []
-
-    if (selectedImportId.value && !imports.value.some((item) => item.id === selectedImportId.value)) {
-      selectedImportId.value = ''
-      errors.value = []
-      resetErrorPagination()
-    }
-    if (!selectedImportId.value && imports.value.length) {
-      selectedImportId.value = imports.value[0].id
-    }
-
-    if (selectedImportId.value) {
-      await refreshErrors(selectedImportId.value)
-    }
+    const payload = (await response.json()) as ImportacoesResponse
+    await applyImports(payload.data || [], { refreshDetails: true })
   } catch (error) {
     message.value = 'Não foi possível carregar as importações.'
   } finally {
@@ -103,7 +169,77 @@ async function refreshImports() {
   }
 }
 
-async function refreshErrors(id) {
+async function applyImports(nextImports: Importacao[], options: ApplyImportsOptions = {}) {
+  const previousSelected = selectedImport.value
+  imports.value = nextImports
+
+  if (selectedImportId.value && !imports.value.some((item) => item.id === selectedImportId.value)) {
+    selectedImportId.value = ''
+    errors.value = []
+    validRows.value = []
+    resetErrorPagination()
+    resetValidRowsPagination()
+  }
+  if (!selectedImportId.value && imports.value.length) {
+    selectedImportId.value = imports.value[0].id
+  }
+
+  const currentSelected = selectedImport.value
+  const statusChanged = previousSelected?.status !== currentSelected?.status
+  const countersChanged =
+    previousSelected?.linhas_processadas !== currentSelected?.linhas_processadas ||
+    previousSelected?.validas !== currentSelected?.validas ||
+    previousSelected?.invalidas !== currentSelected?.invalidas
+  const finishedNow =
+    statusChanged && (currentSelected?.status === 'CONCLUIDA' || currentSelected?.status === 'FALHOU')
+
+  if (options.refreshDetails || countersChanged || finishedNow) {
+    await refreshSelectedDetails()
+  }
+}
+
+async function refreshSelectedDetails() {
+  if (!selectedImportId.value || refreshingDetails) return
+
+  refreshingDetails = true
+  try {
+    await refreshErrors(selectedImportId.value)
+    await refreshValidRows(selectedImportId.value)
+  } catch (error) {
+    message.value = errorMessage(error)
+  } finally {
+    refreshingDetails = false
+  }
+}
+
+function connectImportSocket() {
+  if (importSocket) {
+    importSocket.close()
+  }
+
+  importSocket = new WebSocket(`${webSocketBase()}/api/importacoes/ws`)
+  importSocket.onmessage = async (event: MessageEvent<string>) => {
+    try {
+      const payload = JSON.parse(event.data) as ImportacoesResponse
+      await applyImports(payload.data || [])
+      loading.value = false
+    } catch (error) {
+      message.value = 'Não foi possível processar atualizações em tempo real.'
+    }
+  }
+  importSocket.onerror = () => {
+    message.value = 'Conexão em tempo real indisponível. Use Atualizar para recarregar.'
+    loading.value = false
+  }
+}
+
+function webSocketBase(): string {
+  const url = new URL(apiBase)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url.origin
+}
+
+async function refreshErrors(id: string) {
   if (!id) {
     errors.value = []
     resetErrorPagination()
@@ -118,7 +254,7 @@ async function refreshErrors(id) {
     throw new Error('Falha ao carregar erros da importação.')
   }
 
-  const payload = await response.json()
+  const payload = (await response.json()) as ErrosResponse
   errors.value = payload.data || []
   errorPagination.value = {
     page: payload.page || errorsPage.value,
@@ -128,17 +264,40 @@ async function refreshErrors(id) {
   }
 }
 
-async function selectImport(id) {
-  selectedImportId.value = id
-  errorsPage.value = 1
-  try {
-    await refreshErrors(id)
-  } catch (error) {
-    message.value = error.message
+async function refreshValidRows(id: string) {
+  if (!id) {
+    validRows.value = []
+    resetValidRowsPagination()
+    return
+  }
+
+  const response = await fetch(`${apiBase}/api/importacoes/${id}/validas`)
+  if (!response.ok) {
+    validRows.value = []
+    resetValidRowsPagination()
+    throw new Error('Falha ao carregar linhas válidas da importação.')
+  }
+
+  const payload = (await response.json()) as LinhasValidasResponse
+  validRows.value = payload.data || []
+  if (validRowsPage.value > validRowsTotalPages.value) {
+    validRowsPage.value = Math.max(validRowsTotalPages.value, 1)
   }
 }
 
-async function changeErrorsPage(direction) {
+async function selectImport(id: string) {
+  selectedImportId.value = id
+  errorsPage.value = 1
+  validRowsPage.value = 1
+  try {
+    await refreshErrors(id)
+    await refreshValidRows(id)
+  } catch (error) {
+    message.value = errorMessage(error)
+  }
+}
+
+async function changeErrorsPage(direction: number) {
   if (!selectedImport.value) return
 
   const nextPage = errorsPage.value + direction
@@ -150,8 +309,19 @@ async function changeErrorsPage(direction) {
   try {
     await refreshErrors(selectedImportId.value)
   } catch (error) {
-    message.value = error.message
+    message.value = errorMessage(error)
   }
+}
+
+function changeValidRowsPage(direction: number) {
+  if (!selectedImport.value) return
+
+  const nextPage = validRowsPage.value + direction
+  if (nextPage < 1 || (validRowsTotalPages.value && nextPage > validRowsTotalPages.value)) {
+    return
+  }
+
+  validRowsPage.value = nextPage
 }
 
 async function exportValidRows() {
@@ -166,7 +336,7 @@ async function exportValidRows() {
       throw new Error('Falha ao exportar linhas válidas.')
     }
 
-    const payload = await response.json()
+    const payload = (await response.json()) as LinhasValidasResponse
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -175,8 +345,12 @@ async function exportValidRows() {
     link.click()
     URL.revokeObjectURL(url)
   } catch (error) {
-    message.value = error.message
+    message.value = errorMessage(error)
   }
+}
+
+function resetValidRowsPagination() {
+  validRowsPage.value = 1
 }
 
 function resetErrorPagination() {
@@ -189,7 +363,7 @@ function resetErrorPagination() {
   }
 }
 
-function statusClass(status) {
+function statusClass(status: ImportStatus): string {
   return {
     CONCLUIDA: 'ok',
     PROCESSANDO: 'running',
@@ -198,17 +372,40 @@ function statusClass(status) {
   }[status] || 'pending'
 }
 
-function formatPercent(value) {
+function formatPercent(value: number): string {
   return `${Number(value || 0).toFixed(1)}%`
+}
+
+function formatDuration(value: number): string {
+  const duration = Number(value || 0)
+  if (!duration) return '-'
+  if (duration < 1000) return `${duration} ms`
+  return `${(duration / 1000).toFixed(1)} s`
+}
+
+function errorValue(error: LinhaErro, index: number): string {
+  return error.dados_originais?.[index] ?? ''
+}
+
+function errorCellClass(error: LinhaErro, field: FreightField): { 'invalid-cell': boolean } {
+  return {
+    'invalid-cell': error.campo === field || (error.campo === 'peso' && field.startsWith('peso_')),
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Erro inesperado.'
 }
 
 onMounted(() => {
   refreshImports()
-  timer = window.setInterval(refreshImports, 1000)
+  connectImportSocket()
 })
 
 onUnmounted(() => {
-  window.clearInterval(timer)
+  if (importSocket) {
+    importSocket.close()
+  }
 })
 </script>
 
@@ -264,6 +461,7 @@ onUnmounted(() => {
                 <th>Linhas</th>
                 <th>Válidas</th>
                 <th>Inválidas</th>
+                <th>Duração</th>
               </tr>
             </thead>
             <tbody>
@@ -284,9 +482,10 @@ onUnmounted(() => {
                 <td>{{ item.linhas_processadas }} / {{ item.total_linhas }}</td>
                 <td>{{ item.validas }}</td>
                 <td>{{ item.invalidas }}</td>
+                <td>{{ formatDuration(item.duracao_ms) }}</td>
               </tr>
               <tr v-if="!imports.length">
-                <td colspan="6" class="empty">Nenhuma importação criada.</td>
+                <td colspan="7" class="empty">Nenhuma importação criada.</td>
               </tr>
             </tbody>
           </table>
@@ -295,38 +494,101 @@ onUnmounted(() => {
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Erros</h2>
+          <h2>Linhas válidas</h2>
           <div class="panel-actions">
             <button class="ghost small" type="button" :disabled="!selectedImport" @click="exportValidRows">
-              Exportar válidas
+              Exportar
             </button>
-            <span>{{ selectedImport ? selectedImport.invalidas : 0 }}</span>
+            <span>{{ validRows.length }}</span>
           </div>
-        </div>
-        <div class="selected-line" v-if="selectedImport">
-          <strong>{{ selectedImport.status }}</strong>
-          <span>{{ selectedImport.validas }} válidas, {{ selectedImport.invalidas }} inválidas, {{ selectedImport.total_linhas }} total</span>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Linha</th>
-                <th>Dados</th>
+                <th>Origem</th>
+                <th>Destino</th>
+                <th>Peso mín.</th>
+                <th>Peso máx.</th>
+                <th>Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in paginatedValidRows" :key="row.numero_linha">
+                <td>{{ row.numero_linha }}</td>
+                <td>{{ row.origem }}</td>
+                <td>{{ row.destino }}</td>
+                <td>{{ row.peso_min }}</td>
+                <td>{{ row.peso_max }}</td>
+                <td>{{ row.valor }}</td>
+              </tr>
+              <tr v-if="!selectedImport">
+                <td colspan="6" class="empty">Selecione uma importação para ver as linhas válidas.</td>
+              </tr>
+              <tr v-else-if="!validRows.length">
+                <td colspan="6" class="empty">Sem linhas válidas para exibir.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager" v-if="selectedImport && validRowsTotalPages > 1">
+          <button class="ghost small" type="button" :disabled="validRowsPage <= 1" @click="changeValidRowsPage(-1)">
+            Anterior
+          </button>
+          <span>Página {{ validRowsPage }} de {{ validRowsTotalPages }}</span>
+          <button
+            class="ghost small"
+            type="button"
+            :disabled="validRowsPage >= validRowsTotalPages"
+            @click="changeValidRowsPage(1)"
+          >
+            Próxima
+          </button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Erros</h2>
+          <span>{{ selectedImport ? selectedImport.invalidas : 0 }}</span>
+        </div>
+        <div class="selected-line" v-if="selectedImport">
+          <strong>{{ selectedImport.status }}</strong>
+          <span>{{ selectedImport.validas }} válidas, {{ selectedImport.invalidas }} inválidas, {{ selectedImport.total_linhas }} total</span>
+          <span>{{ formatDuration(selectedImport.duracao_ms) }}</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Linha</th>
+                <th>Origem</th>
+                <th>Destino</th>
+                <th>Peso mín.</th>
+                <th>Peso máx.</th>
+                <th>Valor</th>
                 <th>Motivo</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="error in errors" :key="`${error.numero_linha}-${error.motivo}`">
                 <td>{{ error.numero_linha }}</td>
-                <td class="mono">{{ error.dados_originais.join(', ') }}</td>
+                <td
+                  v-for="(field, index) in freightFields"
+                  :key="field"
+                  class="mono"
+                  :class="errorCellClass(error, field)"
+                >
+                  {{ errorValue(error, index) }}
+                </td>
                 <td>{{ error.motivo }}</td>
               </tr>
               <tr v-if="!selectedImport">
-                <td colspan="3" class="empty">Selecione uma importação para ver os erros.</td>
+                <td colspan="7" class="empty">Selecione uma importação para ver os erros.</td>
               </tr>
               <tr v-else-if="!errors.length">
-                <td colspan="3" class="empty">Sem erros para exibir.</td>
+                <td colspan="7" class="empty">Sem erros para exibir.</td>
               </tr>
             </tbody>
           </table>
