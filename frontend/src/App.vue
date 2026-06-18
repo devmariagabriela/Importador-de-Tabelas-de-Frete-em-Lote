@@ -80,6 +80,7 @@ const loading = ref(false)
 const refreshing = ref(false)
 const uploading = ref(false)
 const message = ref('')
+const socketConnected = ref(false)
 const errorsPage = ref(1)
 const errorsLimit = 50
 const validRowsPage = ref(1)
@@ -95,6 +96,11 @@ let importSocket: WebSocket | null = null
 let refreshingDetails = false
 
 const selectedImport = computed(() => imports.value.find((item) => item.id === selectedImportId.value))
+const activeImports = computed(() => imports.value.filter((item) => item.status === 'PROCESSANDO').length)
+const overallProgress = computed(() => {
+  if (!totals.value.total) return 0
+  return ((totals.value.validas + totals.value.invalidas) * 100) / totals.value.total
+})
 const validRowsTotalPages = computed(() => Math.ceil(validRows.value.length / validRowsLimit))
 const paginatedValidRows = computed(() => {
   const start = (validRowsPage.value - 1) * validRowsLimit
@@ -218,6 +224,9 @@ function connectImportSocket() {
   }
 
   importSocket = new WebSocket(`${webSocketBase()}/api/importacoes/ws`)
+  importSocket.onopen = () => {
+    socketConnected.value = true
+  }
   importSocket.onmessage = async (event: MessageEvent<string>) => {
     try {
       const payload = JSON.parse(event.data) as ImportacoesResponse
@@ -228,8 +237,12 @@ function connectImportSocket() {
     }
   }
   importSocket.onerror = () => {
+    socketConnected.value = false
     message.value = 'Conexão em tempo real indisponível. Use Atualizar para recarregar.'
     loading.value = false
+  }
+  importSocket.onclose = () => {
+    socketConnected.value = false
   }
 }
 
@@ -383,6 +396,11 @@ function formatDuration(value: number): string {
   return `${(duration / 1000).toFixed(1)} s`
 }
 
+function shortId(value: string): string {
+  if (!value) return '-'
+  return value.length > 10 ? value.slice(-10) : value
+}
+
 function errorValue(error: LinhaErro, index: number): string {
   return error.dados_originais?.[index] ?? ''
 }
@@ -411,30 +429,41 @@ onUnmounted(() => {
 
 <template>
   <main class="shell">
-    <section class="topbar">
+    <header class="hero">
       <div>
         <p class="eyebrow">Validação em lote</p>
-        <h1>Importador de Tabelas de Frete</h1>
+        <h1>Importador de Tabelas de <span>Frete</span></h1>
+        <p class="hero-text">Processamento concorrente, progresso em tempo real e rastreabilidade dos erros por linha.</p>
       </div>
-      <button class="ghost" type="button" :disabled="loading" @click="refreshImports">Atualizar</button>
-    </section>
+      <div class="hero-actions">
+        <span class="live-status" :class="{ online: socketConnected }">
+          {{ socketConnected ? 'Tempo real ativo' : 'Atualização manual' }}
+        </span>
+        <button class="ghost" type="button" :disabled="loading" @click="refreshImports">
+          Atualizar
+        </button>
+      </div>
+    </header>
 
     <section class="summary-grid">
-      <div class="summary">
-        <span>Total</span>
+      <div class="summary total">
+        <span>Total de linhas</span>
         <strong>{{ totals.total }}</strong>
+        <small>{{ imports.length }} importação(ões)</small>
       </div>
-      <div class="summary">
+      <div class="summary success">
         <span>Válidas</span>
         <strong>{{ totals.validas }}</strong>
+        <small>Registros aprovados</small>
       </div>
-      <div class="summary">
+      <div class="summary danger">
         <span>Inválidas</span>
         <strong>{{ totals.invalidas }}</strong>
+        <small>{{ activeImports }} em processamento</small>
       </div>
     </section>
 
-    <section class="upload-panel">
+    <section class="upload-row">
       <label class="dropzone">
         <input
           type="file"
@@ -442,18 +471,24 @@ onUnmounted(() => {
           multiple
           @change="onFilesChange"
         />
-        <span>{{ files.length ? `${files.length} arquivo(s) selecionado(s)` : 'Selecionar CSV' }}</span>
+        <span class="upload-icon">^</span>
+        <span class="upload-title">{{ files.length ? `${files.length} arquivo(s) selecionado(s)` : 'Selecionar CSV' }}</span>
+        <small>CSV principal; XLS e XLSX opcionais</small>
+        <em>Arraste ou clique</em>
       </label>
-      <button type="button" :disabled="uploading || !files.length" @click="upload">
+      <button class="import-button" type="button" :disabled="uploading || !files.length" @click="upload">
         {{ uploading ? 'Enviando...' : 'Importar' }}
       </button>
       <p v-if="message" class="message">{{ message }}</p>
     </section>
 
-    <section class="content-grid">
-      <div class="panel">
+    <section class="workspace">
+      <section class="panel imports-panel">
         <div class="panel-head">
-          <h2>Importações</h2>
+          <div>
+            <h2>Importações</h2>
+            <small>Histórico e progresso</small>
+          </div>
           <span>{{ imports.length }}</span>
         </div>
         <div class="table-wrap">
@@ -466,7 +501,6 @@ onUnmounted(() => {
                 <th>Linhas</th>
                 <th>Válidas</th>
                 <th>Inválidas</th>
-                <th>Duração</th>
               </tr>
             </thead>
             <tbody>
@@ -476,7 +510,7 @@ onUnmounted(() => {
                 :class="{ selected: item.id === selectedImportId }"
                 @click="selectImport(item.id)"
               >
-                <td class="mono">{{ item.id }}</td>
+                <td class="mono">#{{ shortId(item.id) }}</td>
                 <td><span class="badge" :class="statusClass(item.status)">{{ item.status }}</span></td>
                 <td>
                   <div class="progress">
@@ -484,22 +518,28 @@ onUnmounted(() => {
                   </div>
                   <small>{{ formatPercent(item.progresso) }}</small>
                 </td>
-                <td>{{ item.linhas_processadas }} / {{ item.total_linhas }}</td>
+                <td>{{ item.linhas_processadas }}/{{ item.total_linhas }}</td>
                 <td>{{ item.validas }}</td>
                 <td>{{ item.invalidas }}</td>
-                <td>{{ formatDuration(item.duracao_ms) }}</td>
               </tr>
               <tr v-if="!imports.length">
-                <td colspan="7" class="empty">Nenhuma importação criada.</td>
+                <td colspan="6" class="empty">
+                  <span class="empty-icon">[]</span>
+                  <strong>Nenhuma importação criada</strong>
+                  <span>Envie um CSV para iniciar a validação.</span>
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      <div class="panel">
+      <section class="panel">
         <div class="panel-head">
-          <h2>Linhas válidas</h2>
+          <div>
+            <h2>Linhas válidas</h2>
+            <small>Registros prontos para exportação</small>
+          </div>
           <div class="panel-actions">
             <button class="ghost small" type="button" :disabled="!selectedImport" @click="exportValidRows">
               Exportar
@@ -529,10 +569,17 @@ onUnmounted(() => {
                 <td>{{ row.valor }}</td>
               </tr>
               <tr v-if="!selectedImport">
-                <td colspan="6" class="empty">Selecione uma importação para ver as linhas válidas.</td>
+                <td colspan="6" class="empty">
+                  <span class="empty-icon">~</span>
+                  <strong>Nenhuma importação selecionada</strong>
+                  <span>Selecione um item no histórico.</span>
+                </td>
               </tr>
               <tr v-else-if="!validRows.length">
-                <td colspan="6" class="empty">Sem linhas válidas para exibir.</td>
+                <td colspan="6" class="empty">
+                  <strong>Sem linhas válidas para exibir</strong>
+                  <span>A validação ainda não retornou registros aprovados.</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -551,16 +598,21 @@ onUnmounted(() => {
             Próxima
           </button>
         </div>
-      </div>
+      </section>
 
-      <div class="panel">
+      <section class="panel errors-panel">
         <div class="panel-head">
-          <h2>Erros</h2>
+          <div>
+            <h2>Erros</h2>
+            <small>Linhas rejeitadas e motivo</small>
+          </div>
           <span>{{ selectedImport ? selectedImport.invalidas : 0 }}</span>
         </div>
         <div class="selected-line" v-if="selectedImport">
-          <strong>{{ selectedImport.status }}</strong>
-          <span>{{ selectedImport.validas }} válidas, {{ selectedImport.invalidas }} inválidas, {{ selectedImport.total_linhas }} total</span>
+          <span class="badge" :class="statusClass(selectedImport.status)">{{ selectedImport.status }}</span>
+          <span>{{ selectedImport.validas }} válidas</span>
+          <span>{{ selectedImport.invalidas }} inválidas</span>
+          <span>{{ selectedImport.total_linhas }} total</span>
           <span>{{ formatDuration(selectedImport.duracao_ms) }}</span>
         </div>
         <div class="table-wrap">
@@ -590,10 +642,17 @@ onUnmounted(() => {
                 <td>{{ error.motivo }}</td>
               </tr>
               <tr v-if="!selectedImport">
-                <td colspan="7" class="empty">Selecione uma importação para ver os erros.</td>
+                <td colspan="7" class="empty">
+                  <span class="empty-icon">!</span>
+                  <strong>Nenhuma importação selecionada</strong>
+                  <span>Selecione um item no histórico.</span>
+                </td>
               </tr>
               <tr v-else-if="!errors.length">
-                <td colspan="7" class="empty">Sem erros para exibir.</td>
+                <td colspan="7" class="empty">
+                  <strong>Sem erros para exibir</strong>
+                  <span>A importação selecionada não possui linhas inválidas nesta página.</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -612,7 +671,7 @@ onUnmounted(() => {
             Próxima
           </button>
         </div>
-      </div>
+      </section>
     </section>
   </main>
 </template>
