@@ -205,6 +205,8 @@ GET /api/importacoes/ws
 
 Abre uma conexão WebSocket que envia uma mensagem JSON a cada segundo com o mesmo payload de `GET /api/importacoes`.
 
+No frontend, o progresso é atualizado automaticamente por WebSocket. O botão `Atualizar` permanece disponível apenas como ação manual de contingência, caso a conexão em tempo real falhe ou o avaliador queira forçar uma nova consulta ao backend.
+
 Exemplo de mensagem:
 
 ```json
@@ -474,6 +476,7 @@ docker run --rm -v "$PWD":/app -w /app golang:1.22-alpine go test ./...
 - O repository em memória usa `sync.RWMutex` para proteger leituras e escritas concorrentes.
 - A deduplicação é feita antes do processamento paralelo para manter comportamento determinístico.
 - O frontend usa WebSocket para acompanhar progresso com atualização contínua sem abrir uma nova requisição a cada ciclo.
+- O botão `Atualizar` no frontend não substitui o WebSocket; ele apenas força uma consulta manual a `GET /api/importacoes` como fallback operacional.
 - A paginação dos erros foi adicionada de forma compatível: sem query string, o endpoint continua retornando todos os erros.
 - As linhas válidas são armazenadas em memória para permitir exportação JSON sem reprocessar o CSV.
 - O backend retorna o campo inválido em cada erro para permitir highlight visual no frontend.
