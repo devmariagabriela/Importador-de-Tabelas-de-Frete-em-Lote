@@ -274,6 +274,17 @@ small {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
+.upload-icon svg,
+.empty-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
 .upload-icon {
   width: 40px;
   height: 40px;
@@ -383,18 +394,30 @@ small {
 }
 
 .table-wrap {
+  position: relative;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   scrollbar-color: #59636d #f4f4f5;
   scrollbar-width: auto;
 }
 
+.table-wrap.scrollable {
+  overflow: auto;
+}
+
 table {
-  min-width: 620px;
   width: 100%;
   border-collapse: collapse;
   font-size: 0.84rem;
+}
+
+.table-wrap:not(.scrollable) table {
+  table-layout: fixed;
+}
+
+.table-wrap.scrollable table {
+  min-width: 620px;
 }
 
 th,
@@ -501,12 +524,28 @@ tbody tr.selected {
   font-size: 0.9rem;
 }
 
-.empty {
-  height: 290px;
+.empty,
+.empty-state {
   color: #9aa4b2;
   text-align: center;
   white-space: normal;
   cursor: default;
+}
+
+.empty {
+  height: 290px;
+}
+
+.empty-state {
+  position: absolute;
+  inset: 44px 0 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  width: 100%;
+  max-width: 100%;
+  padding: 24px;
+  pointer-events: none;
 }
 
 .empty-icon {
@@ -517,19 +556,27 @@ tbody tr.selected {
 }
 
 .empty strong,
-.empty span {
+.empty span,
+.empty-state strong,
+.empty-state > span:not(.empty-icon) {
   display: block;
 }
 
-.empty strong {
+.empty strong,
+.empty-state strong {
+  max-width: 100%;
   color: #e5e7eb;
   font-size: 0.95rem;
+  overflow-wrap: anywhere;
 }
 
-.empty span {
+.empty span,
+.empty-state > span:not(.empty-icon) {
+  max-width: 100%;
   margin-top: 8px;
   color: #949eaa;
   font-size: 0.84rem;
+  overflow-wrap: anywhere;
 }
 
 .pager {

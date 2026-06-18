@@ -471,7 +471,13 @@ onUnmounted(() => {
           multiple
           @change="onFilesChange"
         />
-        <span class="upload-icon">^</span>
+        <span class="upload-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 15V4" />
+            <path d="m7 9 5-5 5 5" />
+            <path d="M5 15v4h14v-4" />
+          </svg>
+        </span>
         <span class="upload-title">{{ files.length ? `${files.length} arquivo(s) selecionado(s)` : 'Selecionar CSV' }}</span>
         <small>CSV principal; XLS e XLSX opcionais</small>
         <em>Arraste ou clique</em>
@@ -491,7 +497,7 @@ onUnmounted(() => {
           </div>
           <span>{{ imports.length }}</span>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap" :class="{ scrollable: imports.length }">
           <table>
             <thead>
               <tr>
@@ -522,15 +528,18 @@ onUnmounted(() => {
                 <td>{{ item.validas }}</td>
                 <td>{{ item.invalidas }}</td>
               </tr>
-              <tr v-if="!imports.length">
-                <td colspan="6" class="empty">
-                  <span class="empty-icon">[]</span>
-                  <strong>Nenhuma importação criada</strong>
-                  <span>Envie um CSV para iniciar a validação.</span>
-                </td>
-              </tr>
             </tbody>
           </table>
+          <div v-if="!imports.length" class="empty-state">
+            <span class="empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 14h4l2 3h4l2-3h4" />
+                <path d="M5 14 7 6h10l2 8v4H5z" />
+              </svg>
+            </span>
+            <strong>Nenhuma importação criada</strong>
+            <span>Envie um CSV para iniciar a validação.</span>
+          </div>
         </div>
       </section>
 
@@ -547,7 +556,7 @@ onUnmounted(() => {
             <span>{{ validRows.length }}</span>
           </div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap" :class="{ scrollable: selectedImport && validRows.length }">
           <table>
             <thead>
               <tr>
@@ -568,21 +577,21 @@ onUnmounted(() => {
                 <td>{{ row.peso_max }}</td>
                 <td>{{ row.valor }}</td>
               </tr>
-              <tr v-if="!selectedImport">
-                <td colspan="6" class="empty">
-                  <span class="empty-icon">~</span>
-                  <strong>Nenhuma importação selecionada</strong>
-                  <span>Selecione um item no histórico.</span>
-                </td>
-              </tr>
-              <tr v-else-if="!validRows.length">
-                <td colspan="6" class="empty">
-                  <strong>Sem linhas válidas para exibir</strong>
-                  <span>A validação ainda não retornou registros aprovados.</span>
-                </td>
-              </tr>
             </tbody>
           </table>
+          <div v-if="!selectedImport" class="empty-state">
+            <span class="empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M3 12h4l3-8 4 16 3-8h4" />
+              </svg>
+            </span>
+            <strong>Nenhuma importação selecionada</strong>
+            <span>Selecione um item no histórico.</span>
+          </div>
+          <div v-else-if="!validRows.length" class="empty-state">
+            <strong>Sem linhas válidas para exibir</strong>
+            <span>A validação ainda não retornou registros aprovados.</span>
+          </div>
         </div>
         <div class="pager" v-if="selectedImport && validRowsTotalPages > 1">
           <button class="ghost small" type="button" :disabled="validRowsPage <= 1" @click="changeValidRowsPage(-1)">
@@ -615,7 +624,7 @@ onUnmounted(() => {
           <span>{{ selectedImport.total_linhas }} total</span>
           <span>{{ formatDuration(selectedImport.duracao_ms) }}</span>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap" :class="{ scrollable: selectedImport && errors.length }">
           <table>
             <thead>
               <tr>
@@ -641,21 +650,23 @@ onUnmounted(() => {
                 </td>
                 <td>{{ error.motivo }}</td>
               </tr>
-              <tr v-if="!selectedImport">
-                <td colspan="7" class="empty">
-                  <span class="empty-icon">!</span>
-                  <strong>Nenhuma importação selecionada</strong>
-                  <span>Selecione um item no histórico.</span>
-                </td>
-              </tr>
-              <tr v-else-if="!errors.length">
-                <td colspan="7" class="empty">
-                  <strong>Sem erros para exibir</strong>
-                  <span>A importação selecionada não possui linhas inválidas nesta página.</span>
-                </td>
-              </tr>
             </tbody>
           </table>
+          <div v-if="!selectedImport" class="empty-state">
+            <span class="empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 4 21 20H3z" />
+                <path d="M12 9v5" />
+                <path d="M12 17h.01" />
+              </svg>
+            </span>
+            <strong>Nenhuma importação selecionada</strong>
+            <span>Selecione um item no histórico.</span>
+          </div>
+          <div v-else-if="!errors.length" class="empty-state">
+            <strong>Sem erros para exibir</strong>
+            <span>A importação selecionada não possui linhas inválidas nesta página.</span>
+          </div>
         </div>
         <div class="pager" v-if="selectedImport && errorPagination.total_pages > 1">
           <button class="ghost small" type="button" :disabled="errorsPage <= 1" @click="changeErrorsPage(-1)">
