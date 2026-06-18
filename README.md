@@ -21,8 +21,10 @@ O backend processa as linhas em background usando goroutines e um worker pool co
 - Validacao com `time.Sleep(10 * time.Millisecond)` por linha
 - Listagem de importacoes com status, contadores e percentual de progresso
 - Listagem de linhas invalidas com numero da linha, dados originais e motivo
+- Paginacao opcional das linhas invalidas
+- Exportacao das linhas validas em JSON
 - Armazenamento em memoria protegido por mutex
-- Frontend com upload, barra de progresso, resumo e tabela de erros
+- Frontend com upload, barra de progresso, resumo, tabela de erros paginada e botao de exportacao
 - Docker Compose com servicos de backend e frontend
 - Massa de teste com erros propositais
 - Testes unitarios para regras de validacao
@@ -214,9 +216,67 @@ Resposta:
 }
 ```
 
+O endpoint tambem aceita paginacao opcional via query string:
+
+```bash
+curl "http://localhost:8080/api/importacoes/1781627076051443654/erros?page=1&limit=50"
+```
+
+Resposta paginada:
+
+```json
+{
+  "data": [
+    {
+      "numero_linha": 3,
+      "dados_originais": ["BELO HORIZONTE", "", "30", "50", "185.91"],
+      "motivo": "destino e obrigatorio"
+    }
+  ],
+  "page": 1,
+  "limit": 50,
+  "total": 3365,
+  "total_pages": 68
+}
+```
+
+Sem `page` e `limit`, o endpoint mantem compatibilidade e retorna todos os erros no campo `data`.
+
+### Exportar Linhas Validas
+
+```http
+GET /api/importacoes/{id}/validas
+```
+
+Retorna as linhas validas da importacao em JSON. No frontend, o botao `Exportar validas` baixa esse conteudo como arquivo `.json`.
+
+Exemplo:
+
+```bash
+curl http://localhost:8080/api/importacoes/1781627076051443654/validas
+```
+
+Resposta:
+
+```json
+{
+  "data": [
+    {
+      "numero_linha": 2,
+      "origem": "SAO PAULO",
+      "destino": "RIO DE JANEIRO",
+      "peso_min": 0,
+      "peso_max": 10,
+      "valor": 45.9
+    }
+  ],
+  "total": 1735
+}
+```
+
 Status HTTP:
 
-- `200 OK`: erros encontrados.
+- `200 OK`: recurso encontrado.
 - `404 Not Found`: importacao inexistente.
 
 ## Formato Esperado do CSV
@@ -286,6 +346,7 @@ Sao armazenados:
 - quantidade de linhas validas
 - quantidade de linhas invalidas
 - erros por importacao
+- linhas validas por importacao, usadas na exportacao JSON
 
 Como nao ha banco de dados, os dados sao perdidos ao reiniciar o backend ou o container.
 
@@ -333,20 +394,19 @@ docker run --rm -v "$PWD":/app -w /app golang:1.22-alpine go test ./...
 - O repository em memoria usa `sync.RWMutex` para proteger leituras e escritas concorrentes.
 - A deduplicacao e feita antes do processamento paralelo para manter comportamento deterministico.
 - O frontend usa polling a cada 1 segundo para acompanhar progresso sem complexidade extra.
+- A paginacao dos erros foi adicionada de forma compativel: sem query string, o endpoint continua retornando todos os erros.
+- As linhas validas sao armazenadas em memoria para permitir exportacao JSON sem reprocessar o CSV.
 
 ## Limitacoes Conhecidas
 
 - Os dados nao persistem apos restart do backend.
 - O frontend usa polling, nao WebSocket ou SSE.
 - O CSV deve estar em UTF-8.
-- Linhas validas nao sao exportadas em JSON nesta versao.
-- Os erros nao possuem paginacao.
+- O highlight visual por celula invalida nao foi implementado, pois exigiria retornar metadados de campo invalido por linha.
 
 ## Melhorias Futuras
 
-- Exportar linhas validas como JSON.
 - Adicionar SSE para progresso em tempo real.
 - Adicionar endpoint de cancelamento de importacao.
-- Paginar a listagem de erros.
 - Highlight visual por celula invalida no frontend.
 - Adicionar benchmark automatizado para a massa de 5000 linhas.
