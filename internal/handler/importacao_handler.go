@@ -30,7 +30,7 @@ func (h *ImportacaoHandler) Register(mux *http.ServeMux) {
 
 func (h *ImportacaoHandler) CreateImport(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(128 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "multipart/form-data invalido")
+		writeError(w, http.StatusBadRequest, "multipart/form-data inválido")
 		return
 	}
 
@@ -41,7 +41,7 @@ func (h *ImportacaoHandler) CreateImport(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "erro ao criar importacao")
+		writeError(w, http.StatusInternalServerError, "erro ao criar importação")
 		return
 	}
 
@@ -51,7 +51,7 @@ func (h *ImportacaoHandler) CreateImport(w http.ResponseWriter, r *http.Request)
 func (h *ImportacaoHandler) ListImports(w http.ResponseWriter, r *http.Request) {
 	response, err := h.service.ListImports()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao listar importacoes")
+		writeError(w, http.StatusInternalServerError, "erro ao listar importações")
 		return
 	}
 	writeJSON(w, http.StatusOK, response)
@@ -60,7 +60,7 @@ func (h *ImportacaoHandler) ListImports(w http.ResponseWriter, r *http.Request) 
 func (h *ImportacaoHandler) GetImportResource(w http.ResponseWriter, r *http.Request) {
 	id, resource, ok := extractImportResource(r.URL.Path)
 	if !ok {
-		writeError(w, http.StatusNotFound, "rota nao encontrada")
+		writeError(w, http.StatusNotFound, "rota não encontrada")
 		return
 	}
 
@@ -70,7 +70,7 @@ func (h *ImportacaoHandler) GetImportResource(w http.ResponseWriter, r *http.Req
 	case "validas":
 		h.GetValidRows(w, r, id)
 	default:
-		writeError(w, http.StatusNotFound, "rota nao encontrada")
+		writeError(w, http.StatusNotFound, "rota não encontrada")
 	}
 }
 
@@ -81,7 +81,7 @@ func (h *ImportacaoHandler) GetErrors(w http.ResponseWriter, r *http.Request, id
 	response, err := h.service.GetErrors(id, page, limit)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "importacao nao encontrada")
+			writeError(w, http.StatusNotFound, "importação não encontrada")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "erro ao listar erros")
@@ -95,10 +95,10 @@ func (h *ImportacaoHandler) GetValidRows(w http.ResponseWriter, r *http.Request,
 	response, err := h.service.GetValidRows(id)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "importacao nao encontrada")
+			writeError(w, http.StatusNotFound, "importação não encontrada")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "erro ao listar linhas validas")
+		writeError(w, http.StatusInternalServerError, "erro ao listar linhas válidas")
 		return
 	}
 

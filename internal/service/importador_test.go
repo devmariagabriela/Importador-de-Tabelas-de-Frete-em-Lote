@@ -18,24 +18,24 @@ func TestValidateLine(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "origem obrigatoria",
+			name: "origem obrigatória",
 			line: csvLine{raw: []string{"", "RIO DE JANEIRO", "0", "10", "45.90"}},
-			want: "origem e obrigatoria",
+			want: "origem e obrigatória",
 		},
 		{
-			name: "peso min obrigatorio",
+			name: "peso min obrigatório",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "", "10", "45.90"}},
-			want: "peso_min e obrigatorio",
+			want: "peso_min e obrigatório",
 		},
 		{
-			name: "peso max obrigatorio",
+			name: "peso max obrigatório",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "0", "", "45.90"}},
-			want: "peso_max e obrigatorio",
+			want: "peso_max e obrigatório",
 		},
 		{
-			name: "valor obrigatorio",
+			name: "valor obrigatório",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "0", "10", ""}},
-			want: "valor e obrigatorio",
+			want: "valor e obrigatório",
 		},
 		{
 			name: "peso max menor que min",
@@ -43,14 +43,14 @@ func TestValidateLine(t *testing.T) {
 			want: "peso_max deve ser maior que peso_min",
 		},
 		{
-			name: "valor invalido",
+			name: "valor inválido",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "0", "10", "0"}},
 			want: "valor deve ser maior que zero",
 		},
 		{
 			name: "peso negativo",
 			line: csvLine{raw: []string{"SAO PAULO", "RIO DE JANEIRO", "-1", "10", "45.90"}},
-			want: "peso nao pode ser negativo",
+			want: "peso não pode ser negativo",
 		},
 		{
 			name: "duplicada",
@@ -90,16 +90,16 @@ func TestMarkDuplicates(t *testing.T) {
 	markDuplicates(lines)
 
 	if lines[0].duplicate {
-		t.Fatal("primeira ocorrencia nao deve ser marcada como duplicada")
+		t.Fatal("primeira ocorrência não deve ser marcada como duplicada")
 	}
 	if !lines[1].duplicate {
-		t.Fatal("segunda ocorrencia da mesma faixa deve ser marcada como duplicada")
+		t.Fatal("segunda ocorrência da mesma faixa deve ser marcada como duplicada")
 	}
 	if !lines[2].duplicate {
 		t.Fatal("faixa numericamente equivalente deve ser marcada como duplicada")
 	}
 	if lines[3].duplicate {
-		t.Fatal("faixa diferente nao deve ser marcada como duplicada")
+		t.Fatal("faixa diferente não deve ser marcada como duplicada")
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 	"desafio-importador-frete/internal/model"
 )
 
-var ErrNotFound = errors.New("importacao nao encontrada")
+var ErrNotFound = errors.New("importação não encontrada")
 
 type ImportRepository interface {
 	Create(importacao model.Importacao) error

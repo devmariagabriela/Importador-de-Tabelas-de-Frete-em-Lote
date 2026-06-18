@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gera CSV de tabelas de frete com erros propositais para teste de validacao."""
+"""Gera CSV de tabelas de frete com erros propositais para teste de validação."""
 
 import csv
 import os
@@ -91,7 +91,7 @@ def main():
 
     print(f"Gerado: {arquivo}")
     print(f"Total: {len(linhas)} linhas")
-    print(f"~{validas_qtd} validas, ~{erros_qtd} com erro, ~{len(duplicatas)} duplicatas")
+    print(f"~{validas_qtd} válidas, ~{erros_qtd} com erro, ~{len(duplicatas)} duplicatas")
 
 
 if __name__ == "__main__":

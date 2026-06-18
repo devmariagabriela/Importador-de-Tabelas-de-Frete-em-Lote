@@ -239,7 +239,7 @@ func readCSVFiles(files []*multipart.FileHeader) ([]csvLine, error) {
 	for _, fileHeader := range files {
 		file, err := fileHeader.Open()
 		if err != nil {
-			return nil, fmt.Errorf("%w: nao foi possivel abrir arquivo", ErrInvalidCSV)
+			return nil, fmt.Errorf("%w: não foi possível abrir arquivo", ErrInvalidCSV)
 		}
 
 		fileLines, err := readCSV(file, nextLine)
@@ -248,7 +248,7 @@ func readCSVFiles(files []*multipart.FileHeader) ([]csvLine, error) {
 			return nil, err
 		}
 		if closeErr != nil {
-			return nil, fmt.Errorf("%w: nao foi possivel fechar arquivo", ErrInvalidCSV)
+			return nil, fmt.Errorf("%w: não foi possível fechar arquivo", ErrInvalidCSV)
 		}
 
 		lines = append(lines, fileLines...)
@@ -268,10 +268,10 @@ func readCSV(reader io.Reader, firstDataLine int) ([]csvLine, error) {
 		return nil, fmt.Errorf("%w: arquivo vazio", ErrInvalidCSV)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%w: falha ao ler cabecalho", ErrInvalidCSV)
+		return nil, fmt.Errorf("%w: falha ao ler cabeçalho", ErrInvalidCSV)
 	}
 	if !validHeader(header) {
-		return nil, fmt.Errorf("%w: cabecalho esperado origem,destino,peso_min,peso_max,valor", ErrInvalidCSV)
+		return nil, fmt.Errorf("%w: cabeçalho esperado origem,destino,peso_min,peso_max,valor", ErrInvalidCSV)
 	}
 
 	var lines []csvLine
@@ -382,36 +382,36 @@ func validateLine(line csvLine, delay time.Duration) (model.FreightRow, string) 
 	valorRaw := strings.TrimSpace(line.raw[4])
 
 	if origem == "" {
-		return model.FreightRow{}, "origem e obrigatoria"
+		return model.FreightRow{}, "origem e obrigatória"
 	}
 	if destino == "" {
-		return model.FreightRow{}, "destino e obrigatorio"
+		return model.FreightRow{}, "destino e obrigatório"
 	}
 	if pesoMinRaw == "" {
-		return model.FreightRow{}, "peso_min e obrigatorio"
+		return model.FreightRow{}, "peso_min e obrigatório"
 	}
 	if pesoMaxRaw == "" {
-		return model.FreightRow{}, "peso_max e obrigatorio"
+		return model.FreightRow{}, "peso_max e obrigatório"
 	}
 	if valorRaw == "" {
-		return model.FreightRow{}, "valor e obrigatorio"
+		return model.FreightRow{}, "valor e obrigatório"
 	}
 
 	pesoMin, err := parseDecimal(pesoMinRaw)
 	if err != nil {
-		return model.FreightRow{}, "peso_min deve ser numerico"
+		return model.FreightRow{}, "peso_min deve ser numérico"
 	}
 	pesoMax, err := parseDecimal(pesoMaxRaw)
 	if err != nil {
-		return model.FreightRow{}, "peso_max deve ser numerico"
+		return model.FreightRow{}, "peso_max deve ser numérico"
 	}
 	valor, err := parseDecimal(valorRaw)
 	if err != nil {
-		return model.FreightRow{}, "valor deve ser numerico"
+		return model.FreightRow{}, "valor deve ser numérico"
 	}
 
 	if pesoMin < 0 || pesoMax < 0 {
-		return model.FreightRow{}, "peso nao pode ser negativo"
+		return model.FreightRow{}, "peso não pode ser negativo"
 	}
 	if pesoMax <= pesoMin {
 		return model.FreightRow{}, "peso_max deve ser maior que peso_min"

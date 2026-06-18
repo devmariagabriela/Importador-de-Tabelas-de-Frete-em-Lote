@@ -1,44 +1,44 @@
 # Importador de Tabelas de Frete em Lote
 
-Aplicacao web fullstack para upload e validacao em lote de tabelas de frete em CSV.
+Aplicação web fullstack para upload e validação em lote de tabelas de frete em CSV.
 
-O backend processa as linhas em background usando goroutines e um worker pool configuravel. O frontend permite enviar um ou mais arquivos, acompanha o progresso da importacao por polling e exibe os erros encontrados por linha.
+O backend processa as linhas em background usando goroutines e um worker pool configurável. O frontend permite enviar um ou mais arquivos, acompanha o progresso da importação por polling e exibe os erros encontrados por linha.
 
 ## Stack
 
 - Backend: Go 1.22 com `net/http`
 - Frontend: Vue 3 com Composition API e Vite
 - Infra: Docker Compose
-- Armazenamento: memoria da aplicacao
-- Banco de dados: nao utilizado
-- ORM: nao utilizado
+- Armazenamento: memória da aplicação
+- Banco de dados: não utilizado
+- ORM: não utilizado
 
 ## Requisitos Atendidos
 
 - Upload de um ou mais arquivos CSV
 - Processamento concorrente com goroutines
-- Worker pool configuravel por variavel de ambiente
-- Validacao com `time.Sleep(10 * time.Millisecond)` por linha
-- Listagem de importacoes com status, contadores e percentual de progresso
-- Listagem de linhas invalidas com numero da linha, dados originais e motivo
-- Paginacao opcional das linhas invalidas
-- Exportacao das linhas validas em JSON
-- Armazenamento em memoria protegido por mutex
-- Frontend com upload, barra de progresso, resumo, tabela de erros paginada e botao de exportacao
-- Docker Compose com servicos de backend e frontend
+- Worker pool configurável por variável de ambiente
+- Validação com `time.Sleep(10 * time.Millisecond)` por linha
+- Listagem de importações com status, contadores e percentual de progresso
+- Listagem de linhas inválidas com número da linha, dados originais e motivo
+- Paginação opcional das linhas inválidas
+- Exportação das linhas válidas em JSON
+- Armazenamento em memória protegido por mutex
+- Frontend com upload, barra de progresso, resumo, tabela de erros paginada e botão de exportação
+- Docker Compose com serviços de backend e frontend
 - Massa de teste com erros propositais
-- Testes unitarios para regras de validacao
+- Testes unitários para regras de validação
 
 ## Arquitetura
 
-O backend segue uma organizacao simples em camadas:
+O backend segue uma organização simples em camadas:
 
 ```text
 Request
   -> Handler
   -> DTO
   -> Service
-  -> Repository em memoria
+  -> Repository em memória
   -> Response
 ```
 
@@ -68,12 +68,12 @@ massa-teste/
 Responsabilidades:
 
 - `cmd/api`: ponto de entrada da API.
-- `internal/config`: leitura de variaveis de ambiente.
+- `internal/config`: leitura de variáveis de ambiente.
 - `internal/handler`: rotas HTTP, multipart upload e respostas JSON.
 - `internal/dto`: contratos de resposta da API.
-- `internal/service`: regras de negocio, leitura do CSV, validacoes e worker pool.
-- `internal/repository`: armazenamento em memoria com `sync.RWMutex`.
-- `internal/model`: entidades de dominio e status da importacao.
+- `internal/service`: regras de negócio, leitura do CSV, validações e worker pool.
+- `internal/repository`: armazenamento em memória com `sync.RWMutex`.
+- `internal/model`: entidades de domínio e status da importação.
 - `internal/middleware`: CORS, log e recover.
 
 ## Como Rodar com Docker
@@ -111,7 +111,7 @@ Resposta esperada:
 }
 ```
 
-## Variaveis de Ambiente
+## Variáveis de Ambiente
 
 Exemplo em `.env.example`:
 
@@ -121,7 +121,7 @@ CORS_ORIGIN=*
 VITE_API_BASE_URL=http://localhost:8080
 ```
 
-Descricao:
+Descrição:
 
 - `IMPORT_WORKERS`: quantidade de workers usados no processamento paralelo.
 - `CORS_ORIGIN`: origem liberada para chamadas ao backend.
@@ -129,7 +129,7 @@ Descricao:
 
 ## Endpoints
 
-### Criar Importacao
+### Criar Importação
 
 ```http
 POST /api/importar
@@ -154,11 +154,11 @@ Resposta:
 
 Status HTTP:
 
-- `202 Accepted`: importacao criada e processamento iniciado.
-- `400 Bad Request`: upload invalido ou nenhum arquivo enviado.
+- `202 Accepted`: importação criada e processamento iniciado.
+- `400 Bad Request`: upload inválido ou nenhum arquivo enviado.
 - `500 Internal Server Error`: erro inesperado.
 
-### Listar Importacoes
+### Listar Importações
 
 ```http
 GET /api/importacoes
@@ -190,7 +190,7 @@ Resposta:
 }
 ```
 
-### Listar Erros da Importacao
+### Listar Erros da Importação
 
 ```http
 GET /api/importacoes/{id}/erros
@@ -210,13 +210,13 @@ Resposta:
     {
       "numero_linha": 3,
       "dados_originais": ["BELO HORIZONTE", "", "30", "50", "185.91"],
-      "motivo": "destino e obrigatorio"
+      "motivo": "destino e obrigatório"
     }
   ]
 }
 ```
 
-O endpoint tambem aceita paginacao opcional via query string:
+O endpoint também aceita paginação opcional via query string:
 
 ```bash
 curl "http://localhost:8080/api/importacoes/1781627076051443654/erros?page=1&limit=50"
@@ -230,7 +230,7 @@ Resposta paginada:
     {
       "numero_linha": 3,
       "dados_originais": ["BELO HORIZONTE", "", "30", "50", "185.91"],
-      "motivo": "destino e obrigatorio"
+      "motivo": "destino e obrigatório"
     }
   ],
   "page": 1,
@@ -240,15 +240,15 @@ Resposta paginada:
 }
 ```
 
-Sem `page` e `limit`, o endpoint mantem compatibilidade e retorna todos os erros no campo `data`.
+Sem `page` e `limit`, o endpoint mantém compatibilidade e retorna todos os erros no campo `data`.
 
-### Exportar Linhas Validas
+### Exportar Linhas Válidas
 
 ```http
 GET /api/importacoes/{id}/validas
 ```
 
-Retorna as linhas validas da importacao em JSON. No frontend, o botao `Exportar validas` baixa esse conteudo como arquivo `.json`.
+Retorna as linhas válidas da importação em JSON. No frontend, o botão `Exportar válidas` baixa esse conteúdo como arquivo `.json`.
 
 Exemplo:
 
@@ -277,7 +277,7 @@ Resposta:
 Status HTTP:
 
 - `200 OK`: recurso encontrado.
-- `404 Not Found`: importacao inexistente.
+- `404 Not Found`: importação inexistente.
 
 ## Formato Esperado do CSV
 
@@ -291,33 +291,33 @@ Campos:
 
 - `origem`: cidade de origem.
 - `destino`: cidade de destino.
-- `peso_min`: peso minimo da faixa.
-- `peso_max`: peso maximo da faixa.
+- `peso_min`: peso mínimo da faixa.
+- `peso_max`: peso máximo da faixa.
 - `valor`: valor do frete.
 
-## Regras de Validacao
+## Regras de Validação
 
-- `origem` e obrigatoria.
-- `destino` e obrigatorio.
-- `peso_min` deve ser numerico.
-- `peso_max` deve ser numerico.
-- `valor` deve ser numerico.
-- Pesos nao podem ser negativos.
+- `origem` e obrigatória.
+- `destino` e obrigatório.
+- `peso_min` deve ser numérico.
+- `peso_max` deve ser numérico.
+- `valor` deve ser numérico.
+- Pesos não podem ser negativos.
 - `peso_max` deve ser maior que `peso_min`.
 - `valor` deve ser maior que zero.
-- Nao pode haver duplicidade de `origem + destino + peso_min + peso_max`.
+- Não pode haver duplicidade de `origem + destino + peso_min + peso_max`.
 
 ## Processamento Concorrente
 
-O processamento acontece em background apos o upload.
+O processamento acontece em background após o upload.
 
 Fluxo simplificado:
 
 ```text
 POST /api/importar
-  -> cria importacao em memoria
+  -> cria importação em memória
   -> inicia goroutine de processamento
-  -> le CSV
+  -> lê CSV
   -> marca duplicidades
   -> envia linhas para worker pool
   -> atualiza contadores e erros no repository
@@ -329,28 +329,28 @@ Cada linha executa obrigatoriamente:
 time.Sleep(10 * time.Millisecond)
 ```
 
-Esse atraso simula uma chamada externa, como validacao de localidade.
+Esse atraso simula uma chamada externa, como validação de localidade.
 
 Com `IMPORT_WORKERS=20`, a massa de teste foi processada em aproximadamente 3 segundos no ambiente local usado durante o desenvolvimento.
 
-## Armazenamento em Memoria
+## Armazenamento em Memória
 
-Os dados ficam somente na memoria do processo Go.
+Os dados ficam somente na memória do processo Go.
 
-Sao armazenados:
+São armazenados:
 
-- importacoes criadas
-- status da importacao
+- importações criadas
+- status da importação
 - total de linhas
 - linhas processadas
-- quantidade de linhas validas
-- quantidade de linhas invalidas
-- erros por importacao
-- linhas validas por importacao, usadas na exportacao JSON
+- quantidade de linhas válidas
+- quantidade de linhas inválidas
+- erros por importação
+- linhas válidas por importação, usadas na exportação JSON
 
-Como nao ha banco de dados, os dados sao perdidos ao reiniciar o backend ou o container.
+Como não há banco de dados, os dados são perdidos ao reiniciar o backend ou o container.
 
-Isso atende a restricao do desafio: sem banco externo e sem ORM.
+Isso atende à restrição do desafio: sem banco externo e sem ORM.
 
 ## Massa de Teste
 
@@ -361,9 +361,9 @@ cd massa-teste
 python3 gerar-massa-teste.py
 ```
 
-O script gera `tabela_frete_teste.csv` com linhas validas e erros propositais.
+O script gera `tabela_frete_teste.csv` com linhas válidas e erros propositais.
 
-Tipos de erro incluidos:
+Tipos de erro incluídos:
 
 - origem ou destino vazio
 - `peso_max` menor que `peso_min`
@@ -371,7 +371,7 @@ Tipos de erro incluidos:
 - peso negativo
 - duplicidade de origem, destino e faixa de peso
 
-Observacao: o script gera 5000 linhas base e adiciona cerca de 100 duplicatas. Por isso, o arquivo final pode ter aproximadamente 5100 registros, alem do cabecalho.
+Observação: o script gera 5000 linhas base e adiciona cerca de 100 duplicatas. Por isso, o arquivo final pode ter aproximadamente 5100 registros, além do cabeçalho.
 
 ## Testes
 
@@ -381,32 +381,32 @@ Rodar testes do backend:
 go test ./...
 ```
 
-Caso o Go nao esteja instalado localmente, e possivel rodar via Docker:
+Caso o Go não esteja instalado localmente, é possível rodar via Docker:
 
 ```bash
 docker run --rm -v "$PWD":/app -w /app golang:1.22-alpine go test ./...
 ```
 
-## Decisoes Tecnicas
+## Decisões Técnicas
 
-- Foi usada a biblioteca padrao `net/http` para manter a API simples e idiomatica.
-- O worker pool evita criar uma goroutine por linha e permite controlar concorrencia por `IMPORT_WORKERS`.
-- O repository em memoria usa `sync.RWMutex` para proteger leituras e escritas concorrentes.
-- A deduplicacao e feita antes do processamento paralelo para manter comportamento deterministico.
+- Foi usada a biblioteca padrão `net/http` para manter a API simples e idiomática.
+- O worker pool evita criar uma goroutine por linha e permite controlar concorrência por `IMPORT_WORKERS`.
+- O repository em memória usa `sync.RWMutex` para proteger leituras e escritas concorrentes.
+- A deduplicação é feita antes do processamento paralelo para manter comportamento determinístico.
 - O frontend usa polling a cada 1 segundo para acompanhar progresso sem complexidade extra.
-- A paginacao dos erros foi adicionada de forma compativel: sem query string, o endpoint continua retornando todos os erros.
-- As linhas validas sao armazenadas em memoria para permitir exportacao JSON sem reprocessar o CSV.
+- A paginação dos erros foi adicionada de forma compatível: sem query string, o endpoint continua retornando todos os erros.
+- As linhas válidas são armazenadas em memória para permitir exportação JSON sem reprocessar o CSV.
 
-## Limitacoes Conhecidas
+## Limitações Conhecidas
 
-- Os dados nao persistem apos restart do backend.
-- O frontend usa polling, nao WebSocket ou SSE.
+- Os dados não persistem após restart do backend.
+- O frontend usa polling, não WebSocket ou SSE.
 - O CSV deve estar em UTF-8.
-- O highlight visual por celula invalida nao foi implementado, pois exigiria retornar metadados de campo invalido por linha.
+- O highlight visual por célula inválida não foi implementado, pois exigiria retornar metadados de campo inválido por linha.
 
 ## Melhorias Futuras
 
 - Adicionar SSE para progresso em tempo real.
-- Adicionar endpoint de cancelamento de importacao.
-- Highlight visual por celula invalida no frontend.
+- Adicionar endpoint de cancelamento de importação.
+- Highlight visual por célula inválida no frontend.
 - Adicionar benchmark automatizado para a massa de 5000 linhas.
